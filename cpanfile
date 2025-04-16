@@ -16,7 +16,7 @@ requires 'Term::ReadLine';
 requires 'Config::IniFiles';
 requires 'HTTP::Status';
 requires 'IO::Socket::INET';
-requires 'URI::Escape''; 
+requires 'URI::Escape'; 
 requires 'LWP::UserAgent';
 requires 'Any::URI::Escape';
 

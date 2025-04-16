@@ -55,7 +55,6 @@ our $filename;
 our $archive_ext = '';
 our $server_running = 1;
 our $downloads_count = 0;
-our $actual_download = 0;  # Flag to differentiate between redirects and actual downloads
 
 # Set up signal handling for parent/child communication
 $SIG{CHLD} = \&sig_child_handler;
@@ -73,21 +72,13 @@ sub sig_child_handler {
 }
 
 sub sig_download_complete {
-    if ($actual_download) {
-        $downloads_count++;
-        warn "Download completed. Count: $downloads_count/$maxdownloads\n";
-        
-        if ($downloads_count >= $maxdownloads) {
-            warn "Maximum downloads reached. Shutting down server...\n";
-            $server_running = 0;
-        }
-    } else {
-        warn "Redirect request processed (not counted towards download limit)\n";
+    $downloads_count++;
+    warn "Download completed. Count: $downloads_count of $maxdownloads\n";
+    
+    if ($downloads_count >= $maxdownloads) {
+        warn "Maximum downloads reached. Shutting down server...\n";
+        $server_running = 0;
     }
-    
-    # Reset the actual_download flag for the next request
-    $actual_download = 0;
-    
     $SIG{USR1} = \&sig_download_complete;  # Reset handler
 }
 
@@ -412,14 +403,11 @@ HTML
                 print $client $html;
             }
             else {
-                # Decrement the download counter
-                $downloads_count++;
-                warn "Download started. Count: $downloads_count/$maxdownloads\n";
+                warn "Download request received for: ". basename($filename)."\n";
                 
                 # Check if we've reached the limit
                 if ($downloads_count >= $maxdownloads) {
                     warn "Maximum downloads reached. Shutting down server...\n";
-                    $server_running = 0;
                 }
                 
                 # Fork a child process to serve the file
@@ -479,6 +467,8 @@ sub serve_file {
     
     send_http_header($client, 200, "OK", "application/octet-stream", 
                     ($type eq "file" ? (-s $filename) : undef), $headers);
+
+    warn "Serving content: " . basename($filename) . $archive_ext . "\n";
     
     if ($type eq "file") {
         open(my $datafile, "<", $filename) or die "Can't open $filename: $!";
@@ -527,6 +517,9 @@ sub serve_file {
             }
         }
     }
+    warn "Download complete for: " . basename($filename) . $archive_ext . "\n";
+    # Signal to the parent process that the download is complete
+    kill USR1 => getppid();
 }
 
 # Main server function
@@ -537,6 +530,7 @@ sub serve_files {
     $filename = $filename_to_serve;
     $downloads_count = 0;
     $server_running = 1;
+    my $redirect_count = 0;
     
     $archive_ext = "";
     if ($filename && -d $filename) {
@@ -574,7 +568,7 @@ sub serve_files {
         }
         
         print "Now serving on $location\n";
-        print "Server will exit after $maxdownloads download(s)\n";
+        print "Server will exit after $maxdownloads download(s). Press CTRL-C to abort.\n";
     }
     
     # Set up non-blocking mode for server socket
@@ -590,14 +584,16 @@ sub serve_files {
         
         if ($client) {
             handle_request($client);
+            $redirect_count++;
+            warn "Total connections handled: $redirect_count\n" if $redirect_count % 5 == 0;
         }
         
         # Give other processes a chance to run
         select(undef, undef, undef, 0.1);
     }
     
+    print "\nServer stopped after serving $downloads_count of $maxdownloads download(s)\n";
     close($server);
-    print "Server stopped after serving $downloads_count download(s)\n";
 }
 
 sub woof_client {

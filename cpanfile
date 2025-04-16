@@ -14,10 +14,9 @@ requires 'Term::ReadLine';
 
 # External dependencies
 requires 'Config::IniFiles';
-requires 'HTTP::Server::Simple::CGI';
 requires 'HTTP::Status';
 requires 'IO::Socket::INET';
-requires 'URI::Escape'; 
+requires 'URI::Escape''; 
 requires 'LWP::UserAgent';
 requires 'Any::URI::Escape';
 

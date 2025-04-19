@@ -35,6 +35,7 @@ use IO::Socket::INET;
 use Socket qw(inet_ntoa sockaddr_in);
 use URI::Escape;
 use LWP::UserAgent;
+use HTTP::Status qw(:constants status_message);
 
 use Archive::Tar;
 use Archive::Zip;
@@ -240,9 +241,7 @@ sub parse_http_request {
             my $buffer;
             my $bytes_read = read($client, $buffer, $remaining > 8192 ? 8192 : $remaining);
 
-            if (!defined $bytes_read || $bytes_read == 0) {
-                last;
-            }
+            last if !defined $bytes_read || $bytes_read == 0;
 
             $request->{content} .= $buffer;
             $remaining -= $bytes_read;
@@ -305,7 +304,7 @@ sub handle_upload {
     my ($request) = @_;
 
     if (!$GLOBS{upload}) {
-        return (501, "Not Implemented", "text/plain", "Uploads are disabled");
+        return (HTTP_NOT_IMPLEMENTED, status_message(HTTP_NOT_IMPLEMENTED), "text/plain", "Uploads are disabled");
     }
 
     # Parse Content-Type to get boundary
@@ -346,7 +345,7 @@ sub handle_upload {
         if (sysopen($destfile, $destfilename, O_WRONLY | O_CREAT | O_EXCL, 0644)) {
             last;
         } elsif ($! != EEXIST) {
-            return (500, "Internal Server Error", "text/plain", "Failed to open $destfilename: $!");
+            return (HTTP_INTERNAL_SERVER_ERROR, status_message(HTTP_INTERNAL_SERVER_ERROR), "text/plain", "Failed to open $destfilename: $!");
         }
     }
 
@@ -383,7 +382,7 @@ sub handle_upload {
 </html>
 HTML
 
-    return (200, "OK", "text/html", $html);
+    return (HTTP_OK, status_message(HTTP_OK), "text/html", $html);
 }
 
 # Handle HTTP requests
@@ -403,7 +402,7 @@ sub handle_request {
     my $request = parse_http_request($client);
     
     if (!defined $request) {
-        send_http_header($client, 400, "Bad Request", "text/plain", 11);
+        send_http_header($client, HTTP_BAD_REQUEST, status_message(HTTP_BAD_REQUEST), "text/plain", 11);
         print $client "Bad Request";
         close($client);
         return;
@@ -450,7 +449,7 @@ sub handle_request {
   </body>
 </html>
 HTML
-            send_http_header($client, 200, "OK", "text/html", length($html));
+            send_http_header($client, HTTP_OK, status_message(HTTP_OK), "text/html", length($html));
             print $client $html if $request->{method} eq 'GET';
             close($client);
         }
@@ -476,14 +475,16 @@ HTML
             
             if ($path ne $location) {
                 # Send redirect
+                my $code = HTTP_FOUND;
+                my $msg = status_message($code);
                 my $html = <<HTML;
 <!DOCTYPE html>
 <html>
-  <head><title>302 Found</title></head>
-  <body>302 Found <a href="$location">here</a>.</body>
+  <head><title>$code $msg</title></head>
+  <body>$code $msg <a href="$location">here</a>.</body>
 </html>
 HTML
-                send_http_header($client, 302, "Found", "text/html", length($html), {
+                send_http_header($client, $code, $msg, "text/html", length($html), {
                     'Location' => $location
                 });
                 print $client $html if $request->{method} eq 'GET';
@@ -506,7 +507,7 @@ HTML
                     if (!defined $pid) {
                         # Fork failed
                         warn "Fork failed: $!\n";
-                        send_http_header($client, 500, "Internal Server Error", "text/plain", 22);
+                        send_http_header($client, HTTP_INTERNAL_SERVER_ERROR, status_message(HTTP_INTERNAL_SERVER_ERROR), "text/plain", 22);
                         print $client "Internal Server Error";
                         close($client);
                     }
@@ -533,7 +534,7 @@ HTML
     }
     else {
         # Method not implemented
-        send_http_header($client, 501, "Not Implemented", "text/plain", 22);
+        send_http_header($client, HTTP_NOT_IMPLEMENTED, status_message(HTTP_NOT_IMPLEMENTED), "text/plain", 22);
         print $client "Method not implemented";
         close($client);
     }
@@ -544,11 +545,8 @@ sub handle_head_request {
     my ($client) = @_;
     my $type = undef;
     
-    if (-f $GLOBS{filename}) {
-        $type = "file";
-    } elsif (-d $GLOBS{filename}) {
-        $type = "dir";
-    }
+    $type = "file" if -f $GLOBS{filename};
+    $type = "dir" if  -d $GLOBS{filename};
     
     return unless $type;
     
@@ -578,7 +576,7 @@ sub handle_head_request {
     }
     
     # Send headers only for HEAD request
-    send_http_header($client, 200, "OK", $content_type, 
+    send_http_header($client, HTTP_OK, status_message(HTTP_OK), $content_type, 
                     ($type eq "file" ? (-s $GLOBS{filename}) : undef), $headers);
     
     warn "HEAD request handled without download count increment\n";
@@ -589,11 +587,8 @@ sub serve_file {
     my ($client, $method) = @_;
     my $type = undef;
 
-    if (-f $GLOBS{filename}) {
-        $type = "file";
-    } elsif (-d $GLOBS{filename}) {
-        $type = "dir";
-    }
+    $type = "file" if -f $GLOBS{filename};
+    $type = "dir" if -d $GLOBS{filename};
 
     die "can only serve files or directories. Aborting.\n" if !$type;
 
@@ -622,7 +617,7 @@ sub serve_file {
         }
     }
 
-    send_http_header($client, 200, "OK", $content_type,
+    send_http_header($client, HTTP_OK, status_message(HTTP_OK), $content_type,
                     ($type eq "file" ? (-s $GLOBS{filename}) : undef), $headers);
 
     # Only send content for GET requests
@@ -811,9 +806,7 @@ sub serve_files {
         # Accept new connections (non-blocking)
         my $client = $server->accept();
 
-        if ($client) {
-            handle_request($client);
-        }
+        handle_request($client) if $client;
 
         # Give other processes a chance to run
         select(undef, undef, undef, 0.1);
@@ -1090,9 +1083,7 @@ sub main {
 
     # Read config files
     my $config;
-    if (-f '/etc/woofrc') {
-        $config = Config::IniFiles->new(-file => '/etc/woofrc');
-    }
+    $config = Config::IniFiles->new(-file => '/etc/woofrc') if -f '/etc/woofrc';
 
     my $home_config_file = $ENV{HOME} ? "$ENV{HOME}/.woofrc" : undef;
     if ($home_config_file && -f $home_config_file) {
@@ -1216,6 +1207,8 @@ if ($@) {
 }
 
 exit 0;
+
+__END__
 
 =pod
 

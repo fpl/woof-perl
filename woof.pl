@@ -26,9 +26,18 @@ use warnings;
 
 use File::Basename;
 use File::Temp qw(tempfile);
-use Config::IniFiles;
+use File::Find;
+use File::Copy;
+use File::Spec;
+
+use Fcntl qw(:flock :DEFAULT O_WRONLY O_CREAT O_EXCL);
+use Errno qw(EEXIST);
+use Cwd qw(abs_path getcwd);
+
 use POSIX qw(:sys_wait_h :signal_h);
 use Getopt::Long qw(:config gnu_getopt);
+
+use Config::IniFiles;
 use Term::ReadLine;
 
 use IO::Socket::INET;
@@ -41,13 +50,6 @@ use Archive::Tar;
 use Archive::Zip;
 use IO::Compress::Gzip qw(gzip $GzipError);
 use IO::Compress::Bzip2 qw(bzip2 $Bzip2Error);
-
-use File::Find;
-use File::Copy;
-use File::Spec;
-use Fcntl qw(:flock :DEFAULT O_WRONLY O_CREAT O_EXCL);
-use Errno qw(EEXIST);
-use Cwd qw(abs_path getcwd);
 
 # Global variables
 our %GLOBS = (
@@ -385,7 +387,6 @@ HTML
     return (HTTP_OK, status_message(HTTP_OK), "text/html", $html);
 }
 
-# Handle HTTP requests
 # Handle HTTP requests
 sub handle_request {
     my ($client) = @_;
@@ -744,6 +745,15 @@ sub serve_file {
     close($client);
 }
 
+# Convert time diffs to hh:mm:ss
+sub time_to_hms {
+    my $time = shift;
+    my $hours = int($time / 3600);
+    my $minutes = int(($time % 3600) / 60);
+    my $seconds = $time % 60;
+    return ($hours, $minutes, $seconds);
+}
+
 # Main server function
 sub serve_files {
     my ($filename_to_serve, $maxdown, $ip_addr, $port) = @_;
@@ -814,17 +824,14 @@ sub serve_files {
         # Periodically show server status if running for a while
         if (time() - $start_time > 300 && (time() - $start_time) % 300 < 1) {
             my $runtime = time() - $start_time;
-            my $hours = int($runtime / 3600);
-            my $minutes = int(($runtime % 3600) / 60);
-            warn sprintf("Server status: running for %d:%02d, served %d/%d downloads\n",
-                $hours, $minutes, $GLOBS{downloads_count}, $GLOBS{maxdownloads});
+            my ($hours, $minutes, $seconds) = time_to_hms($runtime);
+            warn sprintf("Server status: running for %d:%02d:%02d, served %d/%d downloads\n",
+                $hours, $minutes, $seconds, $GLOBS{downloads_count}, $GLOBS{maxdownloads});
         }
     }
 
     my $runtime = time() - $start_time;
-    my $hours = int($runtime / 3600);
-    my $minutes = int(($runtime % 3600) / 60);
-    my $seconds = $runtime % 60;
+    my ($hours, $minutes, $seconds) = time_to_hms($runtime);
 
     print "\nServer stopped after serving $GLOBS{downloads_count} of $GLOBS{maxdownloads} download(s)\n";
     printf "Total runtime: %d:%02d:%02d\n", $hours, $minutes, $seconds;

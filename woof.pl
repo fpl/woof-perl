@@ -138,7 +138,7 @@ sub find_ip {
 }
 
 # Determine MIME type of a file
-sub get_mime_type {
+sub get_mime_type($) {
     my ($file_name) = @_;
 
     my $mime_type;
@@ -181,7 +181,7 @@ sub get_mime_type {
 }
 
 # Send HTTP response header
-sub send_http_header {
+sub send_http_header($$$$$$) {
     my ($client, $code, $message, $content_type, $content_length, $headers) = @_;
     $headers ||= {};
 
@@ -190,7 +190,7 @@ sub send_http_header {
     print $client "Content-Length: $content_length\r\n" if defined $content_length;
     print $client "Server: woof-perl/1.0\r\n";
 
-    foreach my $key (keys %$headers) {
+    for my $key (keys %$headers) {
         print $client "$key: $headers->{$key}\r\n";
     }
 
@@ -198,7 +198,7 @@ sub send_http_header {
 }
 
 # Parse HTTP request
-sub parse_http_request {
+sub parse_http_request($) {
     my ($client) = @_;
     my $request = {};
 
@@ -254,7 +254,7 @@ sub parse_http_request {
 }
 
 # Parse multipart form data
-sub parse_multipart_form {
+sub parse_multipart_form($$) {
     my ($content, $boundary) = @_;
     my $form_data = {};
 
@@ -269,7 +269,7 @@ sub parse_multipart_form {
         my $headers_hash = {};
 
         # Parse headers
-        foreach my $header (split(/\r?\n/, $headers)) {
+        for my $header (split(/\r?\n/, $headers)) {
             if ($header =~ /^([^:]+):\s*(.*)$/) {
                 $headers_hash->{lc($1)} = $2;
             }
@@ -302,7 +302,7 @@ sub parse_multipart_form {
 }
 
 # Handle file upload
-sub handle_upload {
+sub handle_upload($) {
     my ($request) = @_;
 
     if (!$GLOBS{upload}) {
@@ -388,7 +388,7 @@ HTML
 }
 
 # Handle HTTP requests
-sub handle_request {
+sub handle_request($) {
     my ($client) = @_;
     
     # Get peer address
@@ -403,8 +403,9 @@ sub handle_request {
     my $request = parse_http_request($client);
     
     if (!defined $request) {
-        send_http_header($client, HTTP_BAD_REQUEST, status_message(HTTP_BAD_REQUEST), "text/plain", 11);
-        print $client "Bad Request";
+        my $msg = status_message(HTTP_BAD_REQUEST);
+        send_http_header($client, HTTP_BAD_REQUEST, $msg, "text/plain", length($msg), undef);
+        print $client $msg;
         close($client);
         return;
     }
@@ -414,7 +415,7 @@ sub handle_request {
     # Handle different HTTP methods
     if ($request->{method} eq 'POST') {
         my ($code, $message, $content_type, $content) = handle_upload($request);
-        send_http_header($client, $code, $message, $content_type, length($content));
+        send_http_header($client, $code, $message, $content_type, length($content), undef);
         print $client $content;
         close($client);
     } 
@@ -450,7 +451,8 @@ sub handle_request {
   </body>
 </html>
 HTML
-            send_http_header($client, HTTP_OK, status_message(HTTP_OK), "text/html", length($html));
+            my $msg = status_message(HTTP_OK);
+            send_http_header($client, HTTP_OK, $msg, "text/html", length($html), undef);
             print $client $html if $request->{method} eq 'GET';
             close($client);
         }
@@ -508,8 +510,9 @@ HTML
                     if (!defined $pid) {
                         # Fork failed
                         warn "Fork failed: $!\n";
-                        send_http_header($client, HTTP_INTERNAL_SERVER_ERROR, status_message(HTTP_INTERNAL_SERVER_ERROR), "text/plain", 22);
-                        print $client "Internal Server Error";
+                        my $msg = status_message(HTTP_INTERNAL_SERVER_ERROR);
+                        send_http_header($client, HTTP_INTERNAL_SERVER_ERROR, $msg, "text/plain", length($msg), undef);
+                        print $client $msg;
                         close($client);
                     }
                     elsif ($pid == 0) {
@@ -535,14 +538,15 @@ HTML
     }
     else {
         # Method not implemented
-        send_http_header($client, HTTP_NOT_IMPLEMENTED, status_message(HTTP_NOT_IMPLEMENTED), "text/plain", 22);
-        print $client "Method not implemented";
+        my $msg = status_message(HTTP_NOT_IMPLEMENTED);
+        send_http_header($client, HTTP_NOT_IMPLEMENTED, $msg, "text/plain", length($msg), undef);
+        print $client $msg;
         close($client);
     }
 }
 
 # Handle HEAD requests - just send headers without counting as a download
-sub handle_head_request {
+sub handle_head_request($) {
     my ($client) = @_;
     my $type = undef;
     
@@ -584,7 +588,7 @@ sub handle_head_request {
 }
 
 # Serve a file or directory
-sub serve_file {
+sub serve_file($$) {
     my ($client, $method) = @_;
     my $type = undef;
 
@@ -746,7 +750,7 @@ sub serve_file {
 }
 
 # Convert time diffs to hh:mm:ss
-sub time_to_hms {
+sub time_to_hms($) {
     my $time = shift;
     my $hours = int($time / 3600);
     my $minutes = int(($time % 3600) / 60);
@@ -755,7 +759,7 @@ sub time_to_hms {
 }
 
 # Main server function
-sub serve_files {
+sub serve_files($$$$) {
     my ($filename_to_serve, $maxdown, $ip_addr, $port) = @_;
 
     $GLOBS{maxdownloads} = $maxdown;
@@ -839,7 +843,7 @@ sub serve_files {
     close($server);
 }
 
-sub woof_client {
+sub woof_client($) {
     my ($url) = @_;
     
     # Check if URL is valid
@@ -1009,7 +1013,7 @@ sub woof_client {
 }
 
 # Helper function to format file sizes
-sub format_size {
+sub format_size($) {
     my ($bytes) = @_;
     
     # Ensure we have a clean numeric value
@@ -1026,7 +1030,7 @@ sub format_size {
     return sprintf("%.2f %s", $bytes, $units[$i]);
 }
 
-sub usage {
+sub usage($$$) {
     my ($defport, $defmaxdown, $errmsg) = @_;
 
     my $name = basename($0);
@@ -1156,7 +1160,7 @@ sub main {
     ) or usage($defaultport, $defaultmaxdown, "Invalid options");
 
     if ($do_usage) {
-        usage($defaultport, $defaultmaxdown);
+        usage($defaultport, $defaultmaxdown, undef);
     }
 
     if ($GLOBS{maxdownloads} <= 0) {

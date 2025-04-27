@@ -31,9 +31,39 @@ requires 'IO::Compress::Bzip2';
 # Optional modules
 recommends 'File::MimeInfo::Magic';
 
+# For testing
+on 'test' => sub {
+    requires 'Test::More', '0.98';
+    requires 'Test::Exception';
+    requires 'Test::Pod';
+    requires 'HTTP::Server::Simple';
+    requires 'HTTP::Server::Simple::CGI';
+    requires 'Digest::MD5';
+    requires 'FindBin';
+    requires 'IO::Capture';
+};
+
 # For development only
 on 'develop' => sub {
     requires 'Test::More';
     requires 'Test::Exception';
     requires 'Test::Pod';
+    requires 'Test::Pod::Coverage';
+    requires 'Test::Perl::Critic';
+    requires 'Pod::Coverage::TrustPod';
+    requires 'Perl::Critic';
+    requires 'Devel::Cover';
+    requires 'Module::Install';
 };
+
+# For distribution building
+on 'configure' => sub {
+    requires 'ExtUtils::MakeMaker';
+};
+
+# For creating standalone executable
+on 'build' => sub {
+    requires 'App::FatPacker';
+    requires 'Carton';
+};
+

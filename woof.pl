@@ -846,6 +846,10 @@ sub serve_files($$$$) {
 sub woof_client($) {
     my ($url) = @_;
     
+    # Support for non-interactive testing
+    my $noninteractive = defined $ENV{WOOF_NONINTERACTIVE} && $ENV{WOOF_NONINTERACTIVE};
+    my $overwrite_existing = defined $ENV{WOOF_OVERWRITE_EXISTING} && $ENV{WOOF_OVERWRITE_EXISTING};
+
     # Check if URL is valid
     if ($url !~ m{^(http|https)://}) {
         return undef;
@@ -893,21 +897,17 @@ sub woof_client($) {
     my $content_length = $head_response->header('Content-Length');
     $content_length = 0 + $content_length if defined $content_length; # Force numeric context
 
-    # Support for non-interactive testing
-    my $noninteractive = defined $ENV{WOOF_NONINTERACTIVE} && $ENV{WOOF_NONINTERACTIVE};
-    my $overwrite_existing = defined $ENV{WOOF_OVERWRITE_EXISTING} && $ENV{WOOF_OVERWRITE_EXISTING};
-
-    # Ask user for the target filename
-    my $term = Term::ReadLine->new('woof');
-    $term->ornaments(0);
-    $term->add_history($fname);
-    my $input = $term->readline("Enter target filename [$fname]: ");
-    $fname = $input || $fname;
-
     # Override with environment variable if in non-interactive mode
     if ($noninteractive && defined $ENV{WOOF_DEFAULT_FILENAME} && $ENV{WOOF_DEFAULT_FILENAME} ne '') {
         $fname = $ENV{WOOF_DEFAULT_FILENAME};
         print "Using target filename: $fname (non-interactive mode)\n";
+    } else {
+        # Ask user for the target filename
+        my $term = Term::ReadLine->new('woof');
+        $term->ornaments(0);
+        $term->add_history($fname);
+        my $input = $term->readline("Enter target filename [$fname]: ");
+        $fname = $input || $fname;
     }
 
     my $destfilename = $fname =~ m{^/} ? $fname : "./$fname";
@@ -926,7 +926,9 @@ sub woof_client($) {
             $override = $overwrite_existing;
             print "File exists. " . ($override ? "Overwriting" : "Not overwriting") . " (non-interactive mode)\n";
         } else {
-            $input = $term->readline("File exists. Overwrite (y/n)? ");
+            my $term = Term::ReadLine->new('woof');
+            $term->ornaments(0);
+            my $input = $term->readline("File exists. Overwrite (y/n)? ");
             $override = ($input =~ /^y(es)?$/i);
         }
         
